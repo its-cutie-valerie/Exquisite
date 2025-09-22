@@ -1,0 +1,33 @@
+#root {
+  margin: 0 auto;
+  text-align: center;
+}
+
+/* Reader typography (restores heading/list semantics after Tailwind preflight) */
+.reader-prose {
+  line-height: inherit;
+}
+.reader-prose p { margin: 0 0 0.7em; }
+.reader-prose h1,
+.reader-prose h2,
+.reader-prose h3,
+.reader-prose h4,
+.reader-prose h5,
+.reader-prose h6 { font-weight: 800; line-height: 1.2; margin: 1.1em 0 0.5em; text-align: left; hyphens: manual; }
+.reader-prose h1 { font-size: 1.8em; }
+.reader-prose h2 { font-size: 1.5em; }
+.reader-prose h3 { font-size: 1.3em; }
+.reader-prose h4 { font-size: 1.15em; }
+.reader-prose ul,
+.reader-prose ol { padding-left: 1.25em; margin: 0.6em 0 0.9em; }
+.reader-prose ul { list-style: disc; }
+.reader-prose ol { list-style: decimal; }
+.reader-prose li { margin: 0.25em 0; }
+.reader-prose blockquote { margin: 1em 0; padding-left: 0.9em; border-left: 3px solid rgba(0,0,0,0.15); font-style: italic; }
+.reader-prose hr { border: 0; border-top: 1px solid rgba(0,0,0,0.15); margin: 1.2em 0; }
+
+/* Theme tweaks for separators */
+.reader-prose-dark blockquote { border-left-color: rgba(255,255,255,0.25); }
+.reader-prose-dark hr { border-top-color: rgba(255,255,255,0.25); }
+.reader-prose-sepia blockquote { border-left-color: rgba(120, 53, 15, 0.3); }
+.reader-prose-sepia hr { border-top-color: rgba(120, 53, 15, 0.3); }

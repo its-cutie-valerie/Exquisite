@@ -1,0 +1,316 @@
+/* src/index.css - CLEANED UP VERSION */
+@import "tailwindcss";
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegency;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Brand font for the app title */
+.font-brand {
+  font-family: 'Cinzel', Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.3px;
+}
+
+/* ANIMATION KEYFRAMES - Clean, single definitions */
+@keyframes fade-in {
+  from { 
+    opacity: 0; 
+  }
+  to { 
+    opacity: 1; 
+  }
+}
+
+@keyframes fade-out {
+  from { 
+    opacity: 1; 
+  }
+  to { 
+    opacity: 0; 
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes toast-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ANIMATION CLASSES - Fixed with proper fill-mode */
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+.animate-fade-out {
+  animation: fade-out 0.2s ease-in forwards;
+  animation-fill-mode: forwards;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.4s ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.4s ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+.animate-toast {
+  animation: toast-slide-up 360ms cubic-bezier(.2,.9,.2,1) forwards;
+  animation-fill-mode: forwards;
+}
+
+@keyframes toast-slide-down {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+.animate-toast-exit {
+  animation: toast-slide-down 240ms cubic-bezier(.4,.0,.2,1) forwards;
+  animation-fill-mode: forwards;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Progress bar inside toast */
+.toast-progress {
+  height: 4px;
+  background: linear-gradient(90deg, rgba(245,158,11,0.9), rgba(234,88,12,0.95));
+  border-radius: 2px;
+  transition: width 120ms linear;
+}
+
+.toast-track {
+  width: 100%;
+  background: rgba(15,23,42,0.04);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* Animation delays */
+.animation-delay-100 { animation-delay: 100ms; }
+.animation-delay-200 { animation-delay: 200ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+.animation-delay-400 { animation-delay: 400ms; }
+.animation-delay-500 { animation-delay: 500ms; }
+
+/* Custom scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(180 83 9 / 0.6) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgb(180 83 9 / 0.6);
+  border-radius: 2px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(180 83 9 / 0.8);
+}
+
+/* Dark mode scrollbar */
+.dark .custom-scrollbar {
+  scrollbar-color: rgb(120 53 15 / 0.7) transparent;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgb(120 53 15 / 0.7);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(120 53 15 / 0.9);
+}
+
+/* Reusable amber-themed scrollbar used in BooksGrid */
+.booksgrid-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.booksgrid-scrollbar::-webkit-scrollbar-track {
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 4px;
+}
+.booksgrid-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(120deg, #f59e0b 40%, #ea580c 100%);
+  border-radius: 4px;
+}
+.booksgrid-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(120deg, #f59e0b 60%, #ea580c 100%);
+}
+/* Firefox */
+.booksgrid-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #f59e0b #fff7ed;
+}
+
+/* When a modal is open, hide background scrollbars to avoid double scroll on the far left */
+body.modal-open {
+  overflow: hidden !important;
+}
+
+/* Explicitly hide overflow on the main books scroll area while modal is open */
+body.modal-open #books-scroll-area {
+  overflow: hidden !important;
+}
+
+/* Context menu animations */
+.context-menu-animation {
+  animation: contextMenuScale 150ms ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+.menu-fade-in {
+  animation: menuFadeIn 200ms ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+@keyframes contextMenuScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes menuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Add to your global CSS file - Slider Styles */
+.slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.slider-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d97706, #ea580c);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  border: 2px solid white;
+  transition: all 0.2s ease;
+}
+
+.slider-thumb::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.slider-thumb::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d97706, #ea580c);
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider-thumb::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
