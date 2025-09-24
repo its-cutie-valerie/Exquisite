@@ -5,7 +5,6 @@ import {
   setBrowsing as presenceSetBrowsing,
   setReading as presenceSetReading,
 } from './discordPresence'
-import { mediaPlayPause as mediaPlayPauseFfi, mediaNext as mediaNextFfi, mediaPrevious as mediaPreviousFfi, mediaStop as mediaStopFfi } from './winMediaKeys'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 
@@ -73,10 +72,11 @@ function psMedia(action: 'play-pause'|'next'|'previous'|'stop') {
   }
 }
 
-function mediaPlayPause() { try { mediaPlayPauseFfi(); } catch { psMedia('play-pause'); } }
-function mediaNext() { try { mediaNextFfi(); } catch { psMedia('next'); } }
-function mediaPrevious() { try { mediaPreviousFfi(); } catch { psMedia('previous'); } }
-function mediaStop() { try { mediaStopFfi(); } catch { psMedia('stop'); } }
+// Use PowerShell-based media key simulation directly; FFI references are disabled/commented out
+function mediaPlayPause() { psMedia('play-pause'); }
+function mediaNext() { psMedia('next'); }
+function mediaPrevious() { psMedia('previous'); }
+function mediaStop() { psMedia('stop'); }
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
@@ -117,6 +117,50 @@ let settings: any = {
   }
 };
 
+// Normalize and migrate settings from older formats; returns whether a write-back is needed
+function normalizeAndMigrateSettings(raw: any): { value: any; changed: boolean } {
+  let changed = false;
+  const out: any = { ...(raw || {}) };
+
+  // Ensure nested discord object exists
+  if (!out.discord || typeof out.discord !== 'object') {
+    out.discord = {};
+    changed = true;
+  }
+
+  // Migrate legacy top-level discordEnabled -> discord.enabled
+  if (typeof out.discordEnabled !== 'undefined') {
+    const v = !!out.discordEnabled;
+    if (out.discord.enabled !== v) changed = true;
+    out.discord.enabled = v;
+    delete out.discordEnabled;
+  }
+
+  // Coerce types and trim values
+  if (typeof out.discord.enabled !== 'boolean') {
+    // Handle string/number truthy values
+    out.discord.enabled = !!out.discord.enabled;
+    changed = true;
+  }
+  if (typeof out.discord.clientId !== 'string') {
+    if (out.discord.clientId == null) out.discord.clientId = '';
+    else out.discord.clientId = String(out.discord.clientId);
+    changed = true;
+  }
+  const trimmed = out.discord.clientId.trim();
+  if (trimmed !== out.discord.clientId) {
+    out.discord.clientId = trimmed;
+    changed = true;
+  }
+
+  // Basic defaults for other common fields
+  if (!('theme' in out)) out.theme = 'system';
+  if (!('autosave' in out)) out.autosave = true;
+  if (!('fontSize' in out)) out.fontSize = 'normal';
+
+  return { value: out, changed };
+}
+
 function loadSettings() {
   try {
     const userDataPath = app.getPath('userData');
@@ -126,6 +170,48 @@ function loadSettings() {
     } else {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
     }
+
+    // Normalize and migrate legacy fields
+    try {
+      const norm = normalizeAndMigrateSettings(settings);
+      if (norm.changed) {
+        settings = norm.value;
+        // Write back the normalized file to persist migration
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+      } else {
+        settings = norm.value;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Merge defaults from optional settings.defaults.json in app root (do not override user values)
+    try {
+      const defaultsPath = path.join(process.env.APP_ROOT || path.join(__dirname, '..'), 'settings.defaults.json');
+      if (fs.existsSync(defaultsPath)) {
+        const def = JSON.parse(fs.readFileSync(defaultsPath, 'utf8'));
+        // Normalize defaults too (defensive), but don't persist defaults
+        const defNorm = normalizeAndMigrateSettings(def).value;
+        settings = {
+          ...defNorm,
+          ...settings,
+          discord: {
+            ...(defNorm.discord || {}),
+            ...(settings.discord || {}),
+          },
+        };
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Environment overrides for Discord client id if not set in user settings
+    try {
+      const envClient = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
+      if (envClient && (!settings.discord || !settings.discord.clientId)) {
+        settings.discord = { ...(settings.discord || {}), clientId: envClient };
+      }
+    } catch {}
   } catch (e) {
     console.warn('[main] Failed to load settings, using defaults', e);
   }
@@ -270,7 +356,7 @@ function initializeDatabase() {
 function registerIpcHandlers() {
   console.log('Registering IPC handlers...');
   
-  // Remove any existing handlers first
+  // Remove any existing handlers first (do this BEFORE re-registering)
   const handlersToRemove = [
     'db:get-folders', 'db:add-folder', 'db:delete-folder', 'db:rename-folder',
     'db:get-books', 'db:add-book', 'db:update-book', 'db:delete-book',
@@ -283,13 +369,51 @@ function registerIpcHandlers() {
   'app:get-settings', 'app:save-settings', 'app:open-folder-dialog',
     'presence:browsing', 'presence:reading', 'presence:disable'
   ];
+  try {
+    handlersToRemove.forEach((handler) => {
+      try { ipcMain.removeHandler(handler); } catch {}
+    });
+    // Also clear any event listeners registered via ipcMain.on for presence/media events
+    ['presence:browsing', 'presence:reading', 'presence:disable'].forEach((ch) => {
+      try { ipcMain.removeAllListeners(ch); } catch {}
+    });
+  } catch {}
   // Settings IPC
   ipcMain.handle('app:get-settings', () => {
     return settings;
   });
   ipcMain.handle('app:save-settings', (_e, next: any) => {
-    settings = { ...settings, ...next };
+    // Deep-merge settings; only override provided nested keys
+    // Accept legacy top-level discordEnabled boolean as well
+    if (next && typeof next.discordEnabled !== 'undefined') {
+      next = { ...next, discord: { ...(next.discord || {}), enabled: !!next.discordEnabled } };
+      delete next.discordEnabled;
+    }
+
+    const nextDiscordRaw = (next && next.discord) || {};
+    const nextDiscord: any = {};
+    try {
+      Object.entries(nextDiscordRaw).forEach(([k, v]) => { if (v !== undefined) (nextDiscord as any)[k] = v; });
+    } catch {}
+    const prevDefaultFolder = (settings as any)?.defaultImportFolder || (settings as any)?.importFolder || '';
+    const merged = {
+      ...settings,
+      ...next,
+      discord: {
+        ...(settings.discord || {}),
+        ...nextDiscord,
+      },
+    };
+    // Normalize the merged result for consistency
+    const norm = normalizeAndMigrateSettings(merged);
+    settings = norm.value;
     saveSettings();
+    try {
+      const nowDefaultFolder = (settings as any)?.defaultImportFolder || (settings as any)?.importFolder || '';
+      if (nowDefaultFolder !== prevDefaultFolder) {
+        startAutoImportWatcher();
+      }
+    } catch {}
     // Apply presence change immediately
     const d = settings.discord ?? {};
     presenceSetEnabled(!!d.enabled, d.clientId || undefined);
@@ -321,13 +445,7 @@ function registerIpcHandlers() {
     presenceSetEnabled(false);
   });
 
-  handlersToRemove.forEach(handler => {
-    try {
-      ipcMain.removeHandler(handler);
-    } catch (e) {
-      // Handler might not exist, ignore
-    }
-  });
+  // (Handlers were already removed at the start to avoid unregistering fresh ones.)
 
   // --- Reading sessions IPC ---
   ipcMain.handle('stats:add-reading-session', (_e, payload: { bookId: number; start: number; end: number; pages?: number }) => {
@@ -837,6 +955,11 @@ ipcMain.handle('db:add-book', (_event: Electron.IpcMainInvokeEvent, bookData: an
     if (info.changes > 0) {
       const newBook = { id: Number(info.lastInsertRowid), ...bookData };
       console.log('Book added successfully:', newBook.title);
+      try {
+        // Notify renderers so UIs can refresh automatically
+        const all = BrowserWindow.getAllWindows();
+        all.forEach(w => w.webContents.send('library:changed'));
+      } catch {}
       return newBook;
     } else {
       console.log('Book not added - likely duplicate:', bookData.title);
@@ -884,8 +1007,14 @@ ipcMain.handle('db:add-book', (_event: Electron.IpcMainInvokeEvent, bookData: an
         bookData.folderId || null,
         id
       );
-      
-      return result.changes > 0;
+      if (result.changes > 0) {
+        try {
+          const all = BrowserWindow.getAllWindows();
+          all.forEach(w => w.webContents.send('library:changed'));
+        } catch {}
+        return true;
+      }
+      return false;
     } catch (error: any) {
       console.error('Failed to update book:', error?.message || error);
       return false;
@@ -1214,8 +1343,14 @@ ipcMain.handle('books:get-epub-content', async (_event: Electron.IpcMainInvokeEv
       // Delete from database
       const deleteStmt = db.prepare('DELETE FROM books WHERE id = ?');
       const result = deleteStmt.run(id);
-      
-      return result.changes > 0;
+      if (result.changes > 0) {
+        try {
+          const all = BrowserWindow.getAllWindows();
+          all.forEach(w => w.webContents.send('library:changed'));
+        } catch {}
+        return true;
+      }
+      return false;
     } catch (error: any) {
       console.error('Failed to delete book:', error?.message || error);
       return false;
@@ -1543,6 +1678,113 @@ async function importEpubFromPath(filePath: string, forceImport = false) {
   }
 }
 
+// --- Auto-import watcher (polling) ---
+let autoImportTimer: NodeJS.Timeout | null = null;
+let autoImportIndexPath: string;
+let autoImportIndex: Record<string, { mtimeMs: number; size: number }> = {};
+
+function loadAutoImportIndex() {
+  try {
+    const userDataPath = app.getPath('userData');
+    autoImportIndexPath = path.join(userDataPath, 'auto_import_index.json');
+    if (fs.existsSync(autoImportIndexPath)) {
+      autoImportIndex = JSON.parse(fs.readFileSync(autoImportIndexPath, 'utf8')) || {};
+    }
+  } catch {
+    autoImportIndex = {};
+  }
+}
+
+function saveAutoImportIndex() {
+  try {
+    if (!autoImportIndexPath) {
+      const userDataPath = app.getPath('userData');
+      autoImportIndexPath = path.join(userDataPath, 'auto_import_index.json');
+    }
+    fs.writeFileSync(autoImportIndexPath, JSON.stringify(autoImportIndex, null, 2), 'utf8');
+  } catch {}
+}
+
+async function scanAndImportOnce(folder: string) {
+  try {
+    if (!folder || !fs.existsSync(folder)) return;
+    const entries = fs.readdirSync(folder, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!/\.epub$/i.test(entry.name)) continue;
+      const full = path.join(folder, entry.name);
+      let st: fs.Stats;
+      try { st = fs.statSync(full); } catch { continue; }
+      const key = full;
+      const prev = autoImportIndex[key];
+      const sig = { mtimeMs: st.mtimeMs, size: st.size };
+      const isNew = !prev || prev.mtimeMs !== sig.mtimeMs || prev.size !== sig.size;
+      if (!isNew) continue;
+      try {
+        const meta: any = await importEpubFromPath(full, false);
+        if (meta && !(meta as any).isDuplicate) {
+          // Insert into DB (reuse the same SQL as handler)
+          try {
+            const stmt = db.prepare(`
+              INSERT OR IGNORE INTO books (
+                title, author, description, publisher, language, isbn, 
+                published_date, cover_path, file_path, file_size, 
+                folder_id, gutenberg_id, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `);
+            const info = stmt.run(
+              meta.title,
+              meta.author,
+              meta.description || null,
+              meta.publisher || null,
+              meta.language || 'en',
+              meta.isbn || null,
+              meta.publishedDate || null,
+              meta.cover || null,
+              meta.filePath,
+              meta.fileSize,
+              null,
+              null
+            );
+            if (info.changes > 0) {
+              const all = BrowserWindow.getAllWindows();
+              all.forEach(w => w.webContents.send('library:changed'));
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore individual file errors
+      } finally {
+        autoImportIndex[key] = sig; // mark as seen to avoid loops, even if duplicate
+        saveAutoImportIndex();
+      }
+    }
+  } catch (e) {
+    console.warn('[auto-import] scan failed', e);
+  }
+}
+
+function stopAutoImportWatcher() {
+  if (autoImportTimer) { clearInterval(autoImportTimer); autoImportTimer = null; }
+}
+
+function startAutoImportWatcher() {
+  try {
+    stopAutoImportWatcher();
+    loadAutoImportIndex();
+    const folder = (settings as any)?.defaultImportFolder || (settings as any)?.importFolder;
+    if (!folder || typeof folder !== 'string' || !folder.trim()) return;
+    autoImportTimer = setInterval(() => scanAndImportOnce(folder), 10000);
+    // Run an initial scan shortly after startup
+    setTimeout(() => scanAndImportOnce(folder), 2000);
+    console.log('[auto-import] watching folder:', folder);
+  } catch (e) {
+    console.warn('[auto-import] failed to start', e);
+  }
+}
+
 let win: BrowserWindow | null
 let lastMediaRegistration: { okPlay: boolean; okNext: boolean; okPrev: boolean; okStop: boolean } | null = null;
 
@@ -1712,11 +1954,23 @@ app.whenReady().then(() => {
   console.log('App is ready, initializing...');
   
   try {
+    // Ensure a stable userData path across dev runs
+    try {
+      const appData = app.getPath('appData');
+      const desired = path.join(appData, 'codedex_september_project');
+      app.setPath('userData', desired);
+      console.log('[main] userData path set to:', app.getPath('userData'));
+    } catch (e) {
+      console.warn('[main] failed to set userData path', e);
+    }
+
     loadSettings();
     initializeDatabase();
     registerIpcHandlers(); // This registers the download handler
     createWindow();
     registerGlobalMediaShortcuts();
+  // Start auto-import folder watcher if a default folder is configured
+  try { startAutoImportWatcher(); } catch {}
     // Initialize Discord presence state based on settings
     const d = settings.discord ?? {};
     presenceSetEnabled(!!d.enabled, d.clientId || undefined);
@@ -1766,6 +2020,7 @@ app.on('activate', () => {
 })
 
 app.on('window-all-closed', () => {
+  try { stopAutoImportWatcher(); } catch {}
   if (process.platform !== 'darwin') {
     // Close database connection before quitting
     if (db) {

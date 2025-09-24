@@ -62,18 +62,30 @@ function scheduleReconnect() {
   }, 15e3);
 }
 function buildActivity(state) {
+  const LARGE_IMAGE_KEY = "drpc";
+  const SMALL_IMAGE_KEY = "exquisite_small";
+  const appHover = "Exquisite";
   if (state.mode === "reading" && state.reading) {
     const details = `Reading: ${state.reading.title}`.slice(0, 128);
     const activity = {
       details,
       state: state.reading.author ? `by ${state.reading.author}`.slice(0, 128) : void 0,
-      startTimestamp: startTimestamp ?? Math.floor(Date.now() / 1e3)
+      startTimestamp: startTimestamp ?? Math.floor(Date.now() / 1e3),
+      largeImageKey: LARGE_IMAGE_KEY,
+      largeImageText: appHover,
+      // Small overlay is optional – will be ignored if asset key doesn't exist
+      smallImageKey: SMALL_IMAGE_KEY,
+      smallImageText: "Reading with Exquisite"
     };
     return activity;
   }
   return {
     details: "Browsing library",
-    startTimestamp: startTimestamp ?? Math.floor(Date.now() / 1e3)
+    startTimestamp: startTimestamp ?? Math.floor(Date.now() / 1e3),
+    largeImageKey: LARGE_IMAGE_KEY,
+    largeImageText: appHover,
+    smallImageKey: SMALL_IMAGE_KEY,
+    smallImageText: "Exploring books"
   };
 }
 async function setActivity(activity) {
@@ -134,46 +146,6 @@ function setReading(title, author) {
   startTimestamp = startTimestamp ?? Math.floor(Date.now() / 1e3);
   return updateActivity({ ...lastState, mode: "reading", reading: { title, author } });
 }
-let keyTap = () => {
-};
-if (process.platform === "win32") {
-  try {
-    const req = createRequire(import.meta.url);
-    const ffi = req("ffi-napi");
-    const user32 = ffi.Library("user32", {
-      keybd_event: ["void", ["uchar", "uchar", "uint32", "uint64"]]
-    });
-    const KEYEVENTF_KEYUP = 2;
-    keyTap = (vk) => {
-      try {
-        user32.keybd_event(vk, 0, 0, 0);
-        setTimeout(() => user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0), 10);
-      } catch (e) {
-        console.warn("[winMediaKeys] keybd_event failed", e);
-      }
-    };
-  } catch (e) {
-    console.warn("[winMediaKeys] ffi-napi not available; media key simulation disabled");
-  }
-}
-const VK = {
-  MEDIA_NEXT_TRACK: 176,
-  MEDIA_PREV_TRACK: 177,
-  MEDIA_STOP: 178,
-  MEDIA_PLAY_PAUSE: 179
-};
-function mediaPlayPause$1() {
-  keyTap(VK.MEDIA_PLAY_PAUSE);
-}
-function mediaNext$1() {
-  keyTap(VK.MEDIA_NEXT_TRACK);
-}
-function mediaPrevious$1() {
-  keyTap(VK.MEDIA_PREV_TRACK);
-}
-function mediaStop$1() {
-  keyTap(VK.MEDIA_STOP);
-}
 const PS_SCRIPT_CONTENT = `param(
   [Parameter(Mandatory=$true)][ValidateSet('play-pause','next','previous','stop')]
   [string]$Action
@@ -232,32 +204,16 @@ function psMedia(action) {
   }
 }
 function mediaPlayPause() {
-  try {
-    mediaPlayPause$1();
-  } catch {
-    psMedia("play-pause");
-  }
+  psMedia("play-pause");
 }
 function mediaNext() {
-  try {
-    mediaNext$1();
-  } catch {
-    psMedia("next");
-  }
+  psMedia("next");
 }
 function mediaPrevious() {
-  try {
-    mediaPrevious$1();
-  } catch {
-    psMedia("previous");
-  }
+  psMedia("previous");
 }
 function mediaStop() {
-  try {
-    mediaStop$1();
-  } catch {
-    psMedia("stop");
-  }
+  psMedia("stop");
 }
 const require2 = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -279,6 +235,38 @@ let settings = {
     // Provide your Discord Application Client ID here or via UI later
   }
 };
+function normalizeAndMigrateSettings(raw) {
+  let changed = false;
+  const out = { ...raw || {} };
+  if (!out.discord || typeof out.discord !== "object") {
+    out.discord = {};
+    changed = true;
+  }
+  if (typeof out.discordEnabled !== "undefined") {
+    const v = !!out.discordEnabled;
+    if (out.discord.enabled !== v) changed = true;
+    out.discord.enabled = v;
+    delete out.discordEnabled;
+  }
+  if (typeof out.discord.enabled !== "boolean") {
+    out.discord.enabled = !!out.discord.enabled;
+    changed = true;
+  }
+  if (typeof out.discord.clientId !== "string") {
+    if (out.discord.clientId == null) out.discord.clientId = "";
+    else out.discord.clientId = String(out.discord.clientId);
+    changed = true;
+  }
+  const trimmed = out.discord.clientId.trim();
+  if (trimmed !== out.discord.clientId) {
+    out.discord.clientId = trimmed;
+    changed = true;
+  }
+  if (!("theme" in out)) out.theme = "system";
+  if (!("autosave" in out)) out.autosave = true;
+  if (!("fontSize" in out)) out.fontSize = "normal";
+  return { value: out, changed };
+}
 function loadSettings() {
   try {
     const userDataPath = app.getPath("userData");
@@ -287,6 +275,39 @@ function loadSettings() {
       settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
     } else {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
+    }
+    try {
+      const norm = normalizeAndMigrateSettings(settings);
+      if (norm.changed) {
+        settings = norm.value;
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
+      } else {
+        settings = norm.value;
+      }
+    } catch (e) {
+    }
+    try {
+      const defaultsPath = path.join(process.env.APP_ROOT || path.join(__dirname, ".."), "settings.defaults.json");
+      if (fs.existsSync(defaultsPath)) {
+        const def = JSON.parse(fs.readFileSync(defaultsPath, "utf8"));
+        const defNorm = normalizeAndMigrateSettings(def).value;
+        settings = {
+          ...defNorm,
+          ...settings,
+          discord: {
+            ...defNorm.discord || {},
+            ...settings.discord || {}
+          }
+        };
+      }
+    } catch (e) {
+    }
+    try {
+      const envClient = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
+      if (envClient && (!settings.discord || !settings.discord.clientId)) {
+        settings.discord = { ...settings.discord || {}, clientId: envClient };
+      }
+    } catch {
     }
   } catch (e) {
     console.warn("[main] Failed to load settings, using defaults", e);
@@ -440,12 +461,56 @@ function registerIpcHandlers() {
     "presence:reading",
     "presence:disable"
   ];
+  try {
+    handlersToRemove.forEach((handler) => {
+      try {
+        ipcMain.removeHandler(handler);
+      } catch {
+      }
+    });
+    ["presence:browsing", "presence:reading", "presence:disable"].forEach((ch) => {
+      try {
+        ipcMain.removeAllListeners(ch);
+      } catch {
+      }
+    });
+  } catch {
+  }
   ipcMain.handle("app:get-settings", () => {
     return settings;
   });
   ipcMain.handle("app:save-settings", (_e, next) => {
-    settings = { ...settings, ...next };
+    if (next && typeof next.discordEnabled !== "undefined") {
+      next = { ...next, discord: { ...next.discord || {}, enabled: !!next.discordEnabled } };
+      delete next.discordEnabled;
+    }
+    const nextDiscordRaw = next && next.discord || {};
+    const nextDiscord = {};
+    try {
+      Object.entries(nextDiscordRaw).forEach(([k, v]) => {
+        if (v !== void 0) nextDiscord[k] = v;
+      });
+    } catch {
+    }
+    const prevDefaultFolder = (settings == null ? void 0 : settings.defaultImportFolder) || (settings == null ? void 0 : settings.importFolder) || "";
+    const merged = {
+      ...settings,
+      ...next,
+      discord: {
+        ...settings.discord || {},
+        ...nextDiscord
+      }
+    };
+    const norm = normalizeAndMigrateSettings(merged);
+    settings = norm.value;
     saveSettings();
+    try {
+      const nowDefaultFolder = (settings == null ? void 0 : settings.defaultImportFolder) || (settings == null ? void 0 : settings.importFolder) || "";
+      if (nowDefaultFolder !== prevDefaultFolder) {
+        startAutoImportWatcher();
+      }
+    } catch {
+    }
     const d = settings.discord ?? {};
     setEnabled(!!d.enabled, d.clientId || void 0);
     return true;
@@ -471,12 +536,6 @@ function registerIpcHandlers() {
   });
   ipcMain.on("presence:disable", () => {
     setEnabled(false);
-  });
-  handlersToRemove.forEach((handler) => {
-    try {
-      ipcMain.removeHandler(handler);
-    } catch (e) {
-    }
   });
   ipcMain.handle("stats:add-reading-session", (_e, payload) => {
     try {
@@ -901,6 +960,11 @@ function registerIpcHandlers() {
       if (info.changes > 0) {
         const newBook = { id: Number(info.lastInsertRowid), ...bookData };
         console.log("Book added successfully:", newBook.title);
+        try {
+          const all = BrowserWindow.getAllWindows();
+          all.forEach((w) => w.webContents.send("library:changed"));
+        } catch {
+        }
         return newBook;
       } else {
         console.log("Book not added - likely duplicate:", bookData.title);
@@ -941,7 +1005,15 @@ function registerIpcHandlers() {
         bookData.folderId || null,
         id
       );
-      return result.changes > 0;
+      if (result.changes > 0) {
+        try {
+          const all = BrowserWindow.getAllWindows();
+          all.forEach((w) => w.webContents.send("library:changed"));
+        } catch {
+        }
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error("Failed to update book:", (error == null ? void 0 : error.message) || error);
       return false;
@@ -1173,7 +1245,15 @@ ${plainText}`;
       }
       const deleteStmt = db.prepare("DELETE FROM books WHERE id = ?");
       const result = deleteStmt.run(id);
-      return result.changes > 0;
+      if (result.changes > 0) {
+        try {
+          const all = BrowserWindow.getAllWindows();
+          all.forEach((w) => w.webContents.send("library:changed"));
+        } catch {
+        }
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error("Failed to delete book:", (error == null ? void 0 : error.message) || error);
       return false;
@@ -1438,6 +1518,110 @@ async function importEpubFromPath(filePath, forceImport = false) {
     }
   }
 }
+let autoImportTimer = null;
+let autoImportIndexPath;
+let autoImportIndex = {};
+function loadAutoImportIndex() {
+  try {
+    const userDataPath = app.getPath("userData");
+    autoImportIndexPath = path.join(userDataPath, "auto_import_index.json");
+    if (fs.existsSync(autoImportIndexPath)) {
+      autoImportIndex = JSON.parse(fs.readFileSync(autoImportIndexPath, "utf8")) || {};
+    }
+  } catch {
+    autoImportIndex = {};
+  }
+}
+function saveAutoImportIndex() {
+  try {
+    if (!autoImportIndexPath) {
+      const userDataPath = app.getPath("userData");
+      autoImportIndexPath = path.join(userDataPath, "auto_import_index.json");
+    }
+    fs.writeFileSync(autoImportIndexPath, JSON.stringify(autoImportIndex, null, 2), "utf8");
+  } catch {
+  }
+}
+async function scanAndImportOnce(folder) {
+  try {
+    if (!folder || !fs.existsSync(folder)) return;
+    const entries = fs.readdirSync(folder, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!/\.epub$/i.test(entry.name)) continue;
+      const full = path.join(folder, entry.name);
+      let st;
+      try {
+        st = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      const key = full;
+      const prev = autoImportIndex[key];
+      const sig = { mtimeMs: st.mtimeMs, size: st.size };
+      const isNew = !prev || prev.mtimeMs !== sig.mtimeMs || prev.size !== sig.size;
+      if (!isNew) continue;
+      try {
+        const meta = await importEpubFromPath(full, false);
+        if (meta && !meta.isDuplicate) {
+          try {
+            const stmt = db.prepare(`
+              INSERT OR IGNORE INTO books (
+                title, author, description, publisher, language, isbn, 
+                published_date, cover_path, file_path, file_size, 
+                folder_id, gutenberg_id, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `);
+            const info = stmt.run(
+              meta.title,
+              meta.author,
+              meta.description || null,
+              meta.publisher || null,
+              meta.language || "en",
+              meta.isbn || null,
+              meta.publishedDate || null,
+              meta.cover || null,
+              meta.filePath,
+              meta.fileSize,
+              null,
+              null
+            );
+            if (info.changes > 0) {
+              const all = BrowserWindow.getAllWindows();
+              all.forEach((w) => w.webContents.send("library:changed"));
+            }
+          } catch (e) {
+          }
+        }
+      } catch {
+      } finally {
+        autoImportIndex[key] = sig;
+        saveAutoImportIndex();
+      }
+    }
+  } catch (e) {
+    console.warn("[auto-import] scan failed", e);
+  }
+}
+function stopAutoImportWatcher() {
+  if (autoImportTimer) {
+    clearInterval(autoImportTimer);
+    autoImportTimer = null;
+  }
+}
+function startAutoImportWatcher() {
+  try {
+    stopAutoImportWatcher();
+    loadAutoImportIndex();
+    const folder = (settings == null ? void 0 : settings.defaultImportFolder) || (settings == null ? void 0 : settings.importFolder);
+    if (!folder || typeof folder !== "string" || !folder.trim()) return;
+    autoImportTimer = setInterval(() => scanAndImportOnce(folder), 1e4);
+    setTimeout(() => scanAndImportOnce(folder), 2e3);
+    console.log("[auto-import] watching folder:", folder);
+  } catch (e) {
+    console.warn("[auto-import] failed to start", e);
+  }
+}
 let win;
 let lastMediaRegistration = null;
 function createWindow() {
@@ -1555,11 +1739,23 @@ if (isDev) app.commandLine.appendSwitch("disable-http-cache");
 app.whenReady().then(() => {
   console.log("App is ready, initializing...");
   try {
+    try {
+      const appData = app.getPath("appData");
+      const desired = path.join(appData, "codedex_september_project");
+      app.setPath("userData", desired);
+      console.log("[main] userData path set to:", app.getPath("userData"));
+    } catch (e) {
+      console.warn("[main] failed to set userData path", e);
+    }
     loadSettings();
     initializeDatabase();
     registerIpcHandlers();
     createWindow();
     registerGlobalMediaShortcuts();
+    try {
+      startAutoImportWatcher();
+    } catch {
+    }
     const d = settings.discord ?? {};
     setEnabled(!!d.enabled, d.clientId || void 0);
     try {
@@ -1602,6 +1798,10 @@ app.on("activate", () => {
   }
 });
 app.on("window-all-closed", () => {
+  try {
+    stopAutoImportWatcher();
+  } catch {
+  }
   if (process.platform !== "darwin") {
     if (db) {
       try {

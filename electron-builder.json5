@@ -1,15 +1,16 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "YourAppID",
+  "appId": "com.exquisite.app",
   "asar": true,
-  "productName": "YourAppName",
+  "productName": "Exquisite",
   "directories": {
     "output": "release/${version}"
   },
   "files": [
     "dist",
     "dist-electron",
+    "settings.defaults.json",
     {
       "from": "electron/scripts",
       "to": "dist-electron/scripts",

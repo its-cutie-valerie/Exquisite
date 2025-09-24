@@ -1,0 +1,9 @@
+{
+  "theme": "system",
+  "autosave": true,
+  "fontSize": "normal",
+  "discord": {
+    "enabled": true,
+    "clientId": ""
+  }
+}

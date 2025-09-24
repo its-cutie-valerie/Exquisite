@@ -21,6 +21,9 @@ const api = {
   getCoverData: (coverPath) => invoke("books:get-cover-data", coverPath),
   importEpubFromBuffer: (buffer, fileName, meta) => invoke("books:import-epub-from-buffer", buffer, fileName, meta),
   addBook: (bookData) => invoke("db:add-book", bookData),
+  // Serve raw epub and plain text (auxiliary)
+  serveEpub: (filePath) => invoke("books:serve-epub", filePath),
+  getEpubText: (filePath) => invoke("books:get-epub-text", filePath),
   // --- THIS IS THE ONLY METHOD NEEDED FOR READING EPUB CONTENT ---
   // provide both names so renderer code can call either `getEpubContent` or `loadBookContent`
   loadBookContent: (filePath) => invoke("books:get-epub-content", filePath),
@@ -35,6 +38,17 @@ const api = {
   getReadingSessions: (filter) => invoke("stats:get-reading-sessions", filter),
   // Maintenance
   cleanupDuplicates: () => invoke("db:cleanup-duplicates"),
+  // Library change events
+  onLibraryChanged: (callback) => {
+    const handler = () => {
+      try {
+        callback();
+      } catch {
+      }
+    };
+    electron.ipcRenderer.on("library:changed", handler);
+    return () => electron.ipcRenderer.removeListener("library:changed", handler);
+  },
   // Media shortcuts from main (Windows global media keys)
   onMediaEvent: (callback) => {
     console.log("[preload] onMediaEvent subscribed");

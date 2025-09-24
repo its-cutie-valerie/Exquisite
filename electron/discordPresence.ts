@@ -79,12 +79,25 @@ function scheduleReconnect() {
 }
 
 function buildActivity(state: PresenceState) {
+  // Use a custom large image for the app – this must match the Asset Key in the
+  // Discord Developer Portal (not the file name, no extension). Ensure the asset
+  // exists under the SAME application as the clientId you are using.
+  const LARGE_IMAGE_KEY = 'drpc'; // e.g. uploaded as drpc.png -> key becomes 'drpc'
+  // Optional small overlay image (upload in Developer Portal and set its key below)
+  const SMALL_IMAGE_KEY = 'exquisite_small';
+  const appHover = 'Exquisite'; // Text shown when hovering the large image
+
   if (state.mode === 'reading' && state.reading) {
     const details = `Reading: ${state.reading.title}`.slice(0, 128);
     const activity: any = {
       details,
       state: state.reading.author ? `by ${state.reading.author}`.slice(0, 128) : undefined,
       startTimestamp: startTimestamp ?? Math.floor(Date.now() / 1000),
+      largeImageKey: LARGE_IMAGE_KEY,
+      largeImageText: appHover,
+      // Small overlay is optional – will be ignored if asset key doesn't exist
+      smallImageKey: SMALL_IMAGE_KEY,
+      smallImageText: 'Reading with Exquisite',
     };
     return activity;
   }
@@ -92,6 +105,10 @@ function buildActivity(state: PresenceState) {
   return {
     details: 'Browsing library',
     startTimestamp: startTimestamp ?? Math.floor(Date.now() / 1000),
+    largeImageKey: LARGE_IMAGE_KEY,
+    largeImageText: appHover,
+    smallImageKey: SMALL_IMAGE_KEY,
+    smallImageText: 'Exploring books',
   };
 }
 

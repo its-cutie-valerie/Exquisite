@@ -206,6 +206,16 @@ const BookReader: React.FC<BookReaderProps> = ({ book, isOpen, onClose, onProgre
     const [error, setError] = useState<string | null>(null);
     const [showControls, setShowControls] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
+    // Discord presence: set reading when opened, browsing when closed
+    useEffect(() => {
+        try {
+            if (isOpen) {
+                window.db.setPresenceReading?.(book.title, book.author);
+            } else {
+                window.db.setPresenceBrowsing?.();
+            }
+        } catch {}
+    }, [isOpen, book.title, book.author]);
     const [showToc, setShowToc] = useState(false);
     // Current time (UI, top-right)
     const [currentTime, setCurrentTime] = useState<string>(() => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));

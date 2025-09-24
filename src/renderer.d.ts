@@ -71,6 +71,9 @@ export interface IDatabaseApi {
   addReadingSession: (data: { bookId: number; start: number; end: number; pages?: number }) => Promise<boolean>;
   getReadingSessions: (filter?: { bookId?: number; since?: number; until?: number }) => Promise<Array<{ bookId: number; start: number; end: number; pages?: number }>>;
 
+  // Library change broadcast
+  onLibraryChanged?: (callback: () => void) => () => void;
+
   // Media shortcuts from main (Windows global media keys)
   onMediaEvent?: (callback: (type: 'play-pause'|'next'|'previous'|'stop') => void) => () => void;
   getMediaRegistrationOnce?: () => Promise<{ okPlay: boolean; okNext: boolean; okPrev: boolean; okStop: boolean } | null>;

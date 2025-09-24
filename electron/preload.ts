@@ -28,6 +28,9 @@ const api = {
   getCoverData: (coverPath: string) => invoke('books:get-cover-data', coverPath),
   importEpubFromBuffer: (buffer: number[], fileName: string, meta: any) => invoke('books:import-epub-from-buffer', buffer, fileName, meta),
   addBook: (bookData: any) => invoke('db:add-book', bookData),
+  // Serve raw epub and plain text (auxiliary)
+  serveEpub: (filePath: string) => invoke('books:serve-epub', filePath),
+  getEpubText: (filePath: string) => invoke('books:get-epub-text', filePath),
 
   // --- THIS IS THE ONLY METHOD NEEDED FOR READING EPUB CONTENT ---
   // provide both names so renderer code can call either `getEpubContent` or `loadBookContent`
@@ -47,6 +50,13 @@ const api = {
   
   // Maintenance
   cleanupDuplicates: () => invoke('db:cleanup-duplicates'),
+
+  // Library change events
+  onLibraryChanged: (callback: () => void) => {
+    const handler = () => { try { callback(); } catch {} };
+    ipcRenderer.on('library:changed', handler as any);
+    return () => ipcRenderer.removeListener('library:changed', handler as any);
+  },
 
   // Media shortcuts from main (Windows global media keys)
   onMediaEvent: (callback: (type: 'play-pause'|'next'|'previous'|'stop') => void) => {

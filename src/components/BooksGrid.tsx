@@ -563,6 +563,19 @@ useEffect(() => {
   };
 }, [loadBooks]); // Add loadBooks as dependency
 
+  // Auto-refresh when backend reports library changes (e.g., auto-import)
+  useEffect(() => {
+    const subscribe = (window as any).db && (window as any).db.onLibraryChanged;
+    if (!subscribe) return;
+    const off = subscribe(async () => {
+      await loadBooks();
+      if ((window as any).refreshBookCounts) {
+        (window as any).refreshBookCounts();
+      }
+    });
+    return () => { try { off && off(); } catch {} };
+  }, [loadBooks]);
+
 
   const processedBooks = useMemo(() => {
     let filtered = books.filter(book => {
@@ -1222,11 +1235,19 @@ useEffect(() => {
         onSave={async (data) => {
           // apply immediate UI changes if needed (theme, font size)
           try {
-            if (data.theme === 'dark') document.documentElement.classList.add('dark');
-            else document.documentElement.classList.remove('dark');
+            const root = document.documentElement;
+            const setDark = (on: boolean) => { if (on) root.classList.add('dark'); else root.classList.remove('dark'); };
+            if (data.theme === 'dark') setDark(true);
+            else if (data.theme === 'light') setDark(false);
+            else {
+              const media = window.matchMedia('(prefers-color-scheme: dark)');
+              setDark(media.matches);
+            }
           } catch (err) {
             console.warn('Failed to apply theme immediately', err);
           }
+          // Optional: presence refresh to browsing
+          try { window.db.setPresenceBrowsing?.(); } catch {}
         }}
       />
       </Suspense>
